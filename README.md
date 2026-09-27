@@ -51,6 +51,8 @@ Each step, every agent performs three actions:
 2. **State update** — update opinion and emotion from the recommended feed.
 3. **Expression decision** — decide whether to post; posts enter the shared pool.
 
+> **No third-party ABM framework.** The scheduler is hand-written (`SimulationModel` in `model/model.py`), not built on Mesa or any other ABM library. The LLM arm issues one decision call per agent per step (~900 calls per N=30, T=30 run), which requires batch-concurrent dispatch, a shared immutable start-of-step snapshot, checkpoint/resume, and a per-call JSONL audit trail. The reasoning is documented in the thesis (Section 3.1).
+
 ### Two agent types
 
 | | Rule-based | LLM-based |

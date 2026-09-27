@@ -1,4 +1,8 @@
-mesa==1.2.1
+# 依赖清单
+# 说明：本项目的多智能体调度为自建实现（model/model.py 中的 SimulationModel），
+# 未使用任何第三方 ABM 框架（如 Mesa）。早期版本曾在此处声明 mesa==1.2.1，
+# 但实现改为自建调度层以支持「每步全员调用 LLM API + 批次并发 + 断点续跑」，
+# 该依赖从未被 import，故已移除。
 numpy
 pandas
 matplotlib
