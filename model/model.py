@@ -51,7 +51,13 @@ class SimulationModel:
         # 只有显式传入 >0 才会启用（见 run_rule_spiral.py）。
         self.spiral_c = float(spiral_c)
         self.spiral_m = float(spiral_m)
-        self.top_k = conf.TOP_K
+        # ⚠️ 2026-10-09 设计修订：K 比例化（见 config.py 注释）。
+        # auto 模式：K = round(N × ratio)，N=30 → K=10（既有数据逐位不变）。
+        # 目的：让 feed 覆盖率 K/池 ≈ 常数，跨规模比较不再混入覆盖率稀释。
+        if str(getattr(conf, "TOP_K_MODE", "fixed")) == "auto":
+            self.top_k = max(1, int(round(self.N * float(getattr(conf, "TOP_K_N_RATIO", 0.3333333333333333)))))
+        else:
+            self.top_k = conf.TOP_K
         self.max_posts = conf.MAX_POSTS
         self.h = conf.H
         self.rho = conf.RHO
@@ -130,6 +136,9 @@ class SimulationModel:
             "steps": self.steps,
             "alpha": self.alpha,
             "gamma": self.gamma,
+            # ⚠️ 2026-10-09：checkpoint 记录 K，恢复时以存档为准（K 比例化后，
+            # 若仅凭当前配置重算，跨制度续跑会悄悄改变 K、破坏轨迹一致性）。
+            "top_k": int(self.top_k),
             "spiral_c": self.spiral_c,
             "spiral_m": self.spiral_m,
             "use_llm": self.use_llm,
@@ -144,6 +153,9 @@ class SimulationModel:
     def _restore_from_payload(self, payload):
         """把 checkpoint 字典恢复到当前对象。"""
         self.current_step = int(payload.get("current_step", 0))
+        # ⚠️ 2026-10-09：K 以存档为准（无该字段的老存档退回配置计算值）。
+        if "top_k" in payload:
+            self.top_k = int(payload["top_k"])
         self.llm_call_count = int(payload.get("llm_call_count", 0))
         self._post_id_counter = int(payload.get("_post_id_counter", len(payload.get("posts", []))))
         self.agents = [

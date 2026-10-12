@@ -22,9 +22,9 @@ The effect of recommendation strength on polarization is **not robust to the beh
 | Agent type | Effect of $\alpha$ on polarization index (PI) | Verdict |
 |---|---|---|
 | **Rule-based** | standardized $\beta = -0.566$, $R^2=0.320$, $p<10^{-4}$ | strong, reproducible |
-| **LLM (DeepSeek)** | $\beta = +0.0027$, $p = 0.784$ | **null** (equivalence-excluded at $\lvert\beta\rvert>0.031$) |
+| **LLM (DeepSeek)** | standardized $\beta = -0.031$, $R^2=0.001$, $p = 0.782$ | **null** (equivalence-excluded at $\lvert\beta\rvert>0.031$) |
 
-The LLM null is **scale-invariant** ($N{=}100$: $\beta=+0.0041$, $p=0.592$) and holds under a **uniform-random feed** control, indicating the polarization trend is **endogenous to the model** rather than driven by ranking strength.
+The LLM null is **scale-invariant** ($N{=}100$, raw-scale slope: $\beta=+0.0041$, $p=0.592$) and holds under a **uniform-random feed** control, indicating the polarization trend is **endogenous to the model** rather than driven by ranking strength.
 
 > **Implication.** Tuning the *intensity* of a ranking function is not an effective intervention lever. What matters is the **emotional–hostility position of the amplified content**, not the dose of personalization.
 
@@ -103,6 +103,10 @@ Shape family: **39/39 TOST** equivalence tests. Measurement limitations are disc
 ├── metrics/                      # polarization & exposure metrics
 ├── analysis/                     # statistical analysis, figures, robustness reports
 ├── utils/                        # seed control, cost guard, result IO, xlsx writer
+├── scripts/                      # batch orchestration, monitoring & paper pipeline
+│   ├── experiment/               #   stage runner, guards, cost monitor, launchers
+│   ├── paper/                    #   interaction tests, table verification, PDF/DOCX build
+│   └── probe/                    #   prompt-clarity probe and direction-version analysis
 ├── run_rule_main_fixed.py        # rule-arm main experiment
 ├── run_rule_spiral.py            # spiral-of-silence extension
 ├── run_llm_gradient_deepseek.py  # LLM-arm main experiment
@@ -112,6 +116,32 @@ Shape family: **39/39 TOST** equivalence tests. Measurement limitations are disc
 ├── experiment_rule_small.py      # reduced-scale control
 └── requirements.txt
 ```
+
+### Batch orchestration scripts (`scripts/`)
+
+The multi-hundred-run batches reported in the paper were driven by a small
+orchestration layer that is included here for full transparency:
+
+| Area | Representative files | Purpose |
+|---|---|---|
+| Runner | `experiment/run_stage_direction.py` | unified stage runner (`--stage qwen-t100`, `n100b`, …), checkpoint/resume |
+| Survival | `experiment/_guard_qwen.sh`, `_guard_n100b.sh` | watchdog loops that restart the runner if it dies; heartbeat files |
+| Cost / quality | `experiment/_monitor.py`, `_fb_watch.py` | fallback-rate audit (>2% triggers same-seed reroll) and cost ceiling / balance red lines |
+| Launchers | `experiment/_launch_*.py`, `_launch_scheduler.ps1` | guard-proof, duplicate-safe launches |
+| Causal tests | `paper/three_way_interaction.py`, `time_interaction.py`, `model_interaction.py`, `rule_time_interaction.py` | OLS interaction models reported in the paper |
+| Data checks | `paper/verify_tables_new.py`, `verify_replay.py`, `verify_newdata.py` | per-table and bit-level replay verification |
+| Build | `paper/build_toc.py`, `build_outputs.py`, `final_audit.py`, `md2pdf.py` | two-pass TOC pagination, HTML→PDF/DOCX, format audit |
+
+**Path configuration.** These scripts read their data/output roots from
+environment variables with sensible defaults, so they run unchanged on the
+original machine while remaining portable:
+
+```bash
+export ABM_PROJ_ROOT=/path/to/final-code-and-data   # repo root
+export ABM_PROBE_ROOT=/path/to/probe-dir            # probe/output scratch dir
+export ABM_PYTHON=$(which python)                   # interpreter used to spawn subprocesses
+```
+
 
 ## 7. Quick Start
 

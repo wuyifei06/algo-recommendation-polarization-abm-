@@ -27,6 +27,13 @@ class Config:
     ALPHAS: List[float] = None
     GAMMAS: List[float] = None
     TOP_K: int = 10
+    # ⚠️ 2026-10-09 设计决策（最终）：**K=10 固定，定位为"缩小版邓巴数"**——
+    # 个体信息消费容量是认知常数，不随群体规模 N 变化（真实平台中用户也只刷一屏）。
+    # 因此全部规模（N=30/100/200）与两个主体（Rule/LLM）统一 K=10。
+    # 备查：K∝N（比例化）曾被探索以分离"feed 覆盖率稀释"，结论为**无现实对应物**，
+    # 不作设计；如需再调查可 TOP_K_MODE=auto + TOP_K_N_RATIO 开启（默认 fixed）。
+    TOP_K_N_RATIO: float = float(os.getenv("TOP_K_N_RATIO", "0.3333333333333333"))
+    TOP_K_MODE: str = os.getenv("TOP_K_MODE", "fixed")
     MAX_POSTS: int = 5000
     HOMOPHILY: float = 1.0
     RHO: float = 0.2

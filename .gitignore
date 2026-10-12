@@ -20,6 +20,14 @@ figures/
 *.xlsx
 *.qwen
 
+# 方向版实验数据目录（744MB 运行产物，含逐 run 轨迹与原始 LLM 调用日志）
+results_direction/
+results_replay_20261010/
+_ARISING_*/
+_VOIDED_*/
+_ABANDONED_*/
+
+
 # ============================================================
 #  论文正文、内部结果笔记 —— 不属于代码仓
 # ============================================================
@@ -66,5 +74,15 @@ desktop.ini
 *.bak
 *.old
 *.log
-checkpoint_*/
-_RUNNING.lock
+*_RUNNING.lock
+
+# 备份与临时快照（本次会话新增）
+*.bak_*
+README.md.bak_*
+*.ps1.bak_*
+
+# 论文写作流水线的中间产物（不属于代码仓）
+_paras.json
+_work/
+paper_rev/
+*.png
