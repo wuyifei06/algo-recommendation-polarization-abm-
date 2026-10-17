@@ -23,6 +23,28 @@ def similarity(op_i: float, op_j: float) -> float:
     return max(0.0, 1.0 - abs(op_i - op_j) / 2.0)
 
 
+def _stable_topk_indices(values: np.ndarray, k: int) -> np.ndarray:
+    """降序取前 k 个下标；并列时按索引先后（确定性）。
+
+    默认走 O(n) 的 argpartition；只有当第 k 名与第 k+1 名分数**完全相等**
+    （即截断处存在并列）时，才退回完整稳定排序，保证跨平台逐位可复现，
+    同时避免每次推荐都做 O(n log n) 排序带来的性能损失。
+    """
+    n = int(values.size)
+    k = min(int(k), n)
+    if k <= 0:
+        return np.empty(0, dtype=np.int64)
+    if k >= n:
+        return np.argsort(-values, kind="stable")
+    part = np.partition(values, n - k)
+    thr = part[n - k]
+    nxt = np.partition(values, n - k - 1)[n - k - 1]
+    if nxt == thr:                                  # 截断处并列 → 稳定排序
+        return np.argsort(-values, kind="stable")[:k]
+    cand = np.argpartition(values, n - k)[n - k:]   # 无并列 → 快速路径
+    return cand[np.argsort(-values[cand], kind="stable")]
+
+
 def score_for_post(agent: Agent, post: Post, alpha: float, gamma: float, H: float = 1.0) -> float:
     """计算单条 Post 对 agent 的推荐得分。
 
@@ -97,12 +119,9 @@ def recommend_from_arrays(
 
     idx = min(int(top_k), n_valid)
     if pool is None:
-        candidate_indices = np.argpartition(scores, -idx)[-idx:]
-        top_indices = candidate_indices[np.argsort(scores[candidate_indices])[::-1]]
+        top_indices = _stable_topk_indices(scores, idx)
         return [posts[i] for i in top_indices]
 
-    # 只对候选子集做 partition，避免每次完整排序全部帖子。
     sub = scores[pool]
-    candidate_local = np.argpartition(sub, -idx)[-idx:]
-    top_indices = pool[candidate_local[np.argsort(sub[candidate_local])[::-1]]]
+    top_indices = pool[_stable_topk_indices(sub, idx)]
     return [posts[i] for i in top_indices]
