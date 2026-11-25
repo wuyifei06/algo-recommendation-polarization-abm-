@@ -28,7 +28,7 @@ The mechanism is **exposure widening**: raising $\alpha$ shifts the ranking anch
 
 > **Prompt version matters.** Both results above use the **signed-feed prompt**: the LLM agent is told the *signed* mean stance of its recommended set (`feed_mean_opinion`), the same quantity a rule agent receives. With the earlier **unsigned-distance prompt** (only $\frac{1}{2}\overline{|o_i-p_j|}$), the LLM arm shows a null effect ($\beta=-0.031$, $p=0.782$): the agent cannot tell "same side but more extreme" from "opposite side", so $\alpha$ cannot move it. That contrast is itself a finding — the direction of the exposure channel has to be *perceivable* before ranking strength can act. See **Prompt variants** under Section 4.
 
-> **Boundary.** The suppression is a *slowdown of the upward drift*, not a reduction of the polarization level; it fades beyond $T \approx 100$, and reverses if the similarity backbone is removed ($H=0$).
+> **Boundary.** The suppression is a *slowdown of the upward drift*, not a reduction of the polarization level; it fades beyond $T \approx 100$. The claim is stated for $H>0$: at $H=0$ the system degenerates (PI$\approx 2\times10^{-6}$), so no "reversal" is defined.
 
 ## 3. Model Design
 
@@ -76,7 +76,7 @@ Plus a reduced-scale control (30 agents x 30 steps x 5 repeats) and a spiral-of-
 - Main: `N=30` agents, `R=10` repeats per condition, 30 steps + 100-step horizon
 - Scale check: `N=100`
 - Cross-model replication: **Qwen3-Flash** (three arms)
-- Online ablations: `no_post` / `no_emotion` / `no_recommend`
+- Online ablations: `no_post` / `no_emotion` / `positive_control` (positive control freezes stance delta)
 - Zero-cost offline counterfactuals: **decision reallocation replay** (bit-verified to 1 ulp)
 
 ### Prompt variants (important for reproduction)
@@ -86,11 +86,11 @@ Two prompt variants exist and they give different answers:
 | Variant | Field given to the agent | LLM-arm effect of $\alpha$ |
 |---|---|---|
 | **signed-feed** (used in Section 2) | `feed_mean_opinion`: signed mean stance of the recommended set, $[-1,1]$ | $\beta=-0.405$, $p=1.9\times10^{-4}$ |
-| unsigned-distance (legacy default) | `mean_stance_distance`: $\frac{1}{2}\overline{|o_i-p_j|}$, unsigned | $\beta=-0.031$, $p=0.782$ |
+| unsigned-distance (legacy variant, `LLM_FEED_SIGNED=0`) | `mean_stance_distance`: $\frac{1}{2}\overline{|o_i-p_j|}$, unsigned | $\beta=-0.031$, $p=0.782$ |
 
 The rule agent has always received the **signed** feed mean (`o_feed = mean(p.opinion)` in `model/model.py`), so the unsigned LLM prompt is an *information-set asymmetry* rather than a behavioural difference. The signed variant restores the missing quantity and is the one used in the paper.
 
-The signed variant was first implemented and validated in a separate probe directory (`probe_prompt_clarity.py`, `results_prompt_direction/`); see `诊断_信息集不对称_20261008.md` and `判定结果_方向版_20261008.md`. **It is now merged into the main code path and is the default** (`config.py: LLM_SIGNED_FEED`, environment variable `LLM_FEED_SIGNED`). The field appears in the batch prompt as key `fo`, and `_feed_features()` adds `mean_feed_opinion` when the flag is on.
+The signed variant was first implemented and validated in a separate probe directory (`probe_prompt_clarity.py`, `results_prompt_direction/`); see `诊断_信息集不对称_20261008.md` and `判定结果_方向版_20261008.md`. **It is now merged into the main code path and is the default** (`config.py: LLM_SIGNED_FEED`, environment variable `LLM_FEED_SIGNED`). The batch prompt uses the same labeled field table as the paper (7 fields when signed: `id/opinion/emotion/activity/feed_mean_opinion/feed_stance_distance/feed_emotion`), and `build_prompt()` (single-agent path) also includes the signed field. `_feed_features()` adds `mean_feed_opinion` when the flag is on.
 
 ```bash
 # default: signed-feed prompt (reproduces the paper)
@@ -153,6 +153,7 @@ orchestration layer that is included here for full transparency:
 | Launchers | `experiment/_launch_*.py`, `_launch_scheduler.ps1` | guard-proof, duplicate-safe launches |
 | Causal tests | `paper/three_way_interaction.py`, `time_interaction.py`, `model_interaction.py`, `rule_time_interaction.py` | OLS interaction models reported in the paper |
 | Data checks | `paper/verify_tables_new.py`, `verify_replay.py`, `verify_newdata.py` | per-table and bit-level replay verification |
+| Aggregates | `paper/build_aggregates.py` | rebuild `results/aggregates/` from raw run outputs (paper-口径 datasets only) |
 | Build | `paper/build_toc.py`, `build_outputs.py`, `final_audit.py`, `md2pdf.py` | two-pass TOC pagination, HTML→PDF/DOCX, format audit |
 
 **Path configuration.** These scripts read their data/output roots from
@@ -207,24 +208,24 @@ Falls back to serial execution automatically if subprocess creation is unavailab
 
 ## 9. Data Availability
 
-Data are published in three layers, so that every table and figure can be recomputed from the repository alone while the raw logs stay out of git:
+Data are published in three layers, so that every table and figure can be recomputed while the raw logs stay out of git:
 
 | Layer | Content | Size | Where |
 |---|---|---:|---|
-| **Aggregates** (in repo) | `results/aggregates/` — last-step metrics for every run (2,584 rows), per-condition means with 95% CI, OLS effect sizes for all arms, and the 175-run parameter-sensitivity scan | **0.46 MB** | this repository |
+| **Aggregates** (in repo) | `results/aggregates/` — one row per run (last step), per-condition means with 95% CI, OLS effect sizes, and the 175-run parameter-sensitivity scan. 18 datasets: 3 rule arms (`rule_main_d4`, `rule_small_d4`, `rule_spiral`) and 15 LLM arms (signed-feed paper arms + the two legacy unsigned prompt variants) | **~0.42 MB** | this repository |
 | Per-run time series | `llm_robust_summary.csv` / VPI time series for each arm | ~180 MB | GitHub Release / Zenodo (DOI on acceptance) |
 | Raw call logs + checkpoints | one JSONL per LLM run, resumable checkpoint state (~700 MB total) | ~510 MB | Zenodo archive (DOI on acceptance) |
 
-`results/aggregates/` is the minimum needed to reproduce Tables 1–3, Figures 1–5 and the sensitivity analysis:
+`results/aggregates/` is rebuilt from raw outputs with `python scripts/paper/build_aggregates.py` (`ABM_PROBE_ROOT` points at the probe directory; `sensitivity_runs.csv` keeps the shipped 175-run scan). It is the minimum needed to reproduce Tables 1–2, Figures 1–5 and supplementary tables S1/S3/S6/S10:
 
 ```
-results/aggregates/runs_laststep.csv      # 2,584 runs × (dataset, α, γ, seed, PI, HE, EE, EM, SR)
+results/aggregates/runs_laststep.csv      # 3,429 runs × (dataset, α, γ, seed, run_id, steps, PI, HE, EE, EM, SR, spiral_c, spiral_m, mean_exposure_distance)
 results/aggregates/pi_by_condition.csv    # per dataset × α × γ: n, mean, SD, 95% CI
 results/aggregates/effect_sizes.csv       # per dataset × γ: raw slope, SE, t, p, R², standardized β
 results/aggregates/sensitivity_runs.csv   # 175-run parameter perturbation scan
 ```
 
-Time-series directories and `*.jsonl` call logs are excluded from git by design — a few thousand small files would bloat the history without being reviewable as diffs.
+Only paper-口径 batches are included. Deprecated batches are quarantined outside the repo and excluded: early Qwen `r10/_fix/_fix_retry`, `slope_boost*`, `check`, `fb_fix`, `llm_gradient_r20`, plus `llm_decouple_*`, `llm_robust_grid` and the old unsigned-prompt ablation / N=100 / random-feed batches. Time-series directories and `*.jsonl` call logs are excluded from git by design — a few thousand small files would bloat the history without being reviewable as diffs.
 
 ## 10. Known Measurement Limitations
 
