@@ -17,16 +17,18 @@ Does the **strength of algorithmic recommendation** ($\alpha$) causally affect *
 
 ## 2. Headline Finding
 
-The effect of recommendation strength on polarization is **not robust to the behavioural mechanism**:
+Raising the engagement weight $\alpha$ **lowers** the polarization index, and the direction holds across both agent types:
 
 | Agent type | Effect of $\alpha$ on polarization index (PI) | Verdict |
 |---|---|---|
-| **Rule-based** | standardized $\beta = -0.566$, $R^2=0.320$, $p<10^{-4}$ | strong, reproducible |
-| **LLM (DeepSeek)** | standardized $\beta = -0.031$, $R^2=0.001$, $p = 0.782$ | **null** (equivalence-excluded at $\lvert\beta\rvert>0.031$) |
+| **Rule-based** (N=200, T=200, 500 runs) | standardized $\beta = -0.566$, $R^2=0.320$, $p<10^{-4}$ | strong, reproducible |
+| **LLM (DeepSeek)** (N=30, T=30, 80 runs) | standardized $\beta = -0.405$, $R^2=0.164$, $p=1.9\times10^{-4}$ | significant, same sign |
 
-The LLM null is **scale-invariant** ($N{=}100$, raw-scale slope: $\beta=+0.0041$, $p=0.592$) and holds under a **uniform-random feed** control, indicating the polarization trend is **endogenous to the model** rather than driven by ranking strength.
+The mechanism is **exposure widening**: raising $\alpha$ shifts the ranking anchor from "closest to you" toward "what everyone is reading", which lowers Top-$K$ homogeneity and slows the upward drift of polarization. The effect runs through exposure structure rather than emotional exposure (emotion channel: $b=-0.109$, $p=0.48$).
 
-> **Implication.** Tuning the *intensity* of a ranking function is not an effective intervention lever. What matters is the **emotional–hostility position of the amplified content**, not the dose of personalization.
+> **Prompt version matters.** Both results above use the **signed-feed prompt**: the LLM agent is told the *signed* mean stance of its recommended set (`feed_mean_opinion`), the same quantity a rule agent receives. With the earlier **unsigned-distance prompt** (only $\frac{1}{2}\overline{|o_i-p_j|}$), the LLM arm shows a null effect ($\beta=-0.031$, $p=0.782$): the agent cannot tell "same side but more extreme" from "opposite side", so $\alpha$ cannot move it. That contrast is itself a finding — the direction of the exposure channel has to be *perceivable* before ranking strength can act. See **Prompt variants** under Section 4.
+
+> **Boundary.** The suppression is a *slowdown of the upward drift*, not a reduction of the polarization level; it fades beyond $T \approx 100$, and reverses if the similarity backbone is removed ($H=0$).
 
 ## 3. Model Design
 
@@ -41,7 +43,7 @@ Score(i, j) = H * sim(i, j) + alpha * engagement(j) + gamma * emotion(j)
 - `gamma` in `[0, 2]` — weight on emotional content.
 - Top-`K` (`K = 10`) items are pushed to each agent; an agent's own posts are excluded from its own candidates.
 
-> **Why H is fixed.** Because similarity is always weighted most heavily, the Top-K set is *structurally* the K nearest items regardless of `alpha`. Homophily is therefore a **structural property of the mechanism**, not a free variable — this is central to interpreting the divergent effects across agent types.
+> **Why H is fixed.** Similarity is always weighted most heavily, so the Top-K set is *structurally dominated* by the K nearest items. Homophily is therefore a property of the mechanism rather than a free variable. `alpha` does not overturn this: it shifts the composition of the Top-K set only slightly, but measurably — in the rule arm the exposure-homophily index moves from 0.9998 (`alpha=0`) to 0.9974 (`alpha=2`). Small as it is, that shift is what carries the effect.
 
 ### Per-step loop
 
@@ -76,6 +78,19 @@ Plus a reduced-scale control (30 agents x 30 steps x 5 repeats) and a spiral-of-
 - Cross-model replication: **Qwen3-Flash** (three arms)
 - Online ablations: `no_post` / `no_emotion` / `no_recommend`
 - Zero-cost offline counterfactuals: **decision reallocation replay** (bit-verified to 1 ulp)
+
+### Prompt variants (important for reproduction)
+
+Two prompt variants exist and they give different answers:
+
+| Variant | Field given to the agent | LLM-arm effect of $\alpha$ |
+|---|---|---|
+| **signed-feed** (used in Section 2) | `feed_mean_opinion`: signed mean stance of the recommended set, $[-1,1]$ | $\beta=-0.405$, $p=1.9\times10^{-4}$ |
+| unsigned-distance (legacy default) | `mean_stance_distance`: $\frac{1}{2}\overline{|o_i-p_j|}$, unsigned | $\beta=-0.031$, $p=0.782$ |
+
+The rule agent has always received the **signed** feed mean (`o_feed = mean(p.opinion)` in `model/model.py`), so the unsigned LLM prompt is an *information-set asymmetry* rather than a behavioural difference. The signed variant restores the missing quantity and is the one used in the paper.
+
+The signed variant was first implemented and validated in a separate probe directory (`probe_prompt_clarity.py`, `results_prompt_direction/`); see `诊断_信息集不对称_20261008.md` and `判定结果_方向版_20261008.md`. **It is not yet merged into `llm/prompt.py`**, so `main.py --mode llm` out of the box reproduces the *unsigned* (null) arm only. Porting it is tracked as a TODO.
 
 ## 5. Metrics
 
