@@ -74,10 +74,19 @@ def build_batch_prompt(batch: list) -> str:
                 "a": round(float(state["activity"]), 4),
                 "d": round(float(state.get("mean_stance_distance", 0.0)), 4),
                 "fe": round(float(state.get("mean_feed_emotion", 0.0)), 4),
+                **(
+                    {"fo": round(float(state.get("mean_feed_opinion", 0.0)), 4)}
+                    if state.get("mean_feed_opinion") is not None
+                    else {}
+                ),
             }
         )
+    has_fo = any("fo" in c for c in compact)
     rules = (
         "Return only a JSON array with one object per input id, in the same order. "
+        + ("Key fo is the signed mean stance of the shown posts, in [-1,1] "
+           "(negative = opposite side, positive = your side, 0 = neutral). " if has_fo else "")
+        +
         "Each object must contain only express (0/1), stance_delta [-0.05,0.05], "
         "emotion_delta [-0.1,0.1]. Decide from the shown feed and your own state; "
         "you may stay silent or keep your stance unchanged when you judge it "

@@ -40,6 +40,13 @@ class Config:
     MU: float = 0.03
     H: float = 1.0
 
+    # ── 方向版提示词开关（2026-11-25）────────────────────────────────
+    # True ：给 LLM 主体补上「推荐内容平均立场」（带符号，[-1,1]），与规则主体
+    #        拿到的 o_feed = Σp.opinion/K 信息集对齐 —— 这是论文采用的口径。
+    # False：原版（只给无符号距离 mean|o_i−p_j|/2），用于复现旧数据（LD 臂零效应）。
+    # 环境变量 LLM_FEED_SIGNED=0 可切回原版。
+    LLM_SIGNED_FEED: bool = True
+
     # LLM experiment
     LLM_N_AGENTS: int = 30
     LLM_STEPS: int = 30
@@ -88,6 +95,8 @@ class Config:
         self.LLM_API_ENDPOINT = (self.LLM_API_ENDPOINT or env.get("LLM_API_ENDPOINT") or "").strip()
         self.LLM_MODEL = (self.LLM_MODEL or env.get("LLM_MODEL") or env.get("LLM_MODEL_NAME") or "").strip()
         self.LLM_MODEL_NAME = (self.LLM_MODEL_NAME or self.LLM_MODEL).strip()
+        _signed = str(env.get("LLM_FEED_SIGNED", os.getenv("LLM_FEED_SIGNED", "1"))).strip().lower()
+        self.LLM_SIGNED_FEED = _signed not in ("0", "false", "no", "off")
 
         self.LLM_TEMPERATURE = float(self.LLM_TEMPERATURE if self.LLM_TEMPERATURE != 0.7 else env.get("LLM_TEMPERATURE", 0.7))
         self.LLM_TIMEOUT_SECONDS = int(self.LLM_TIMEOUT_SECONDS if self.LLM_TIMEOUT_SECONDS != 20 else env.get("LLM_TIMEOUT_SECONDS", 20))

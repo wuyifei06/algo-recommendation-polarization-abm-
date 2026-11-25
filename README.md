@@ -90,7 +90,15 @@ Two prompt variants exist and they give different answers:
 
 The rule agent has always received the **signed** feed mean (`o_feed = mean(p.opinion)` in `model/model.py`), so the unsigned LLM prompt is an *information-set asymmetry* rather than a behavioural difference. The signed variant restores the missing quantity and is the one used in the paper.
 
-The signed variant was first implemented and validated in a separate probe directory (`probe_prompt_clarity.py`, `results_prompt_direction/`); see `诊断_信息集不对称_20261008.md` and `判定结果_方向版_20261008.md`. **It is not yet merged into `llm/prompt.py`**, so `main.py --mode llm` out of the box reproduces the *unsigned* (null) arm only. Porting it is tracked as a TODO.
+The signed variant was first implemented and validated in a separate probe directory (`probe_prompt_clarity.py`, `results_prompt_direction/`); see `诊断_信息集不对称_20261008.md` and `判定结果_方向版_20261008.md`. **It is now merged into the main code path and is the default** (`config.py: LLM_SIGNED_FEED`, environment variable `LLM_FEED_SIGNED`). The field appears in the batch prompt as key `fo`, and `_feed_features()` adds `mean_feed_opinion` when the flag is on.
+
+```bash
+# default: signed-feed prompt (reproduces the paper)
+python main.py --mode llm
+
+# legacy: unsigned-distance prompt (reproduces the null arm, beta=-0.031)
+LLM_FEED_SIGNED=0 python main.py --mode llm
+```
 
 ## 5. Metrics
 

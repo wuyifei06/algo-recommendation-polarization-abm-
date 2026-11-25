@@ -126,13 +126,22 @@ class LLMRobustnessModel(SimulationModel):
         详见 ``llm/prompt.py`` 顶部的说明与
         ``deepseek-bug-check/D4_同质推荐角点_改动验证与机制发现_20260920.md`` §10。
         """
+        signed = getattr(conf, "LLM_SIGNED_FEED", True)
         if not recs:
-            return {"mean_stance_distance": 0.0, "mean_feed_emotion": agent.emotion}
+            feats = {"mean_stance_distance": 0.0, "mean_feed_emotion": agent.emotion}
+            if signed:
+                feats["mean_feed_opinion"] = float(agent.opinion)
+            return feats
         distances = [abs(agent.opinion - p.opinion) / 2.0 for p in recs]
-        return {
+        feats = {
             "mean_stance_distance": float(np.mean(distances)),
             "mean_feed_emotion": float(np.mean([p.emotion for p in recs])),
         }
+        # 带符号的推荐内容平均立场：规则主体一直有这个量（o_feed = Σp.opinion/K），
+        # LLM 主体早期缺失，导致「同向但更极端」与「反向」在提示词中不可区分。
+        if signed:
+            feats["mean_feed_opinion"] = float(np.mean([p.opinion for p in recs]))
+        return feats
 
     def _fallback_decision(self, agent, recs: List[Post], t: int) -> Dict[str, float]:
         """Bounded deterministic fallback, used only for bad/failed outputs."""
