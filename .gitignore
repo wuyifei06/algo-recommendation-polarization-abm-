@@ -12,7 +12,10 @@ credentials.json
 # ============================================================
 #  实验数据与结果产物（体积大；按需单独发布）
 # ============================================================
-results/
+results/*
+# 但保留可复算的聚合数据（论文表 1/表 3/图用）
+!results/aggregates/
+!results/aggregates/**
 logs/
 figures/
 *.csv
@@ -86,3 +89,7 @@ _paras.json
 _work/
 paper_rev/
 *.png
+
+# ---- 例外：论文可复算的聚合数据（覆盖上面的目录忽略与 *.csv 忽略）----
+!results/aggregates/
+!results/aggregates/*.csv

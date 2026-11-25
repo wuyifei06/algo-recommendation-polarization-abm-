@@ -207,7 +207,24 @@ Falls back to serial execution automatically if subprocess creation is unavailab
 
 ## 9. Data Availability
 
-The `results/` directory (about 700 MB of per-step checkpoints, call logs, and aggregate metrics) is **not** included in this repository to keep it lightweight. It is available from the author on reasonable request.
+Data are published in three layers, so that every table and figure can be recomputed from the repository alone while the raw logs stay out of git:
+
+| Layer | Content | Size | Where |
+|---|---|---:|---|
+| **Aggregates** (in repo) | `results/aggregates/` — last-step metrics for every run (2,584 rows), per-condition means with 95% CI, OLS effect sizes for all arms, and the 175-run parameter-sensitivity scan | **0.46 MB** | this repository |
+| Per-run time series | `llm_robust_summary.csv` / VPI time series for each arm | ~180 MB | GitHub Release / Zenodo (DOI on acceptance) |
+| Raw call logs + checkpoints | one JSONL per LLM run, resumable checkpoint state (~700 MB total) | ~510 MB | Zenodo archive (DOI on acceptance) |
+
+`results/aggregates/` is the minimum needed to reproduce Tables 1–3, Figures 1–5 and the sensitivity analysis:
+
+```
+results/aggregates/runs_laststep.csv      # 2,584 runs × (dataset, α, γ, seed, PI, HE, EE, EM, SR)
+results/aggregates/pi_by_condition.csv    # per dataset × α × γ: n, mean, SD, 95% CI
+results/aggregates/effect_sizes.csv       # per dataset × γ: raw slope, SE, t, p, R², standardized β
+results/aggregates/sensitivity_runs.csv   # 175-run parameter perturbation scan
+```
+
+Time-series directories and `*.jsonl` call logs are excluded from git by design — a few thousand small files would bloat the history without being reviewable as diffs.
 
 ## 10. Known Measurement Limitations
 
