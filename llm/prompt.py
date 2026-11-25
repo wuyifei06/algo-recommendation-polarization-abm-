@@ -16,9 +16,54 @@ Prompt 不负责计算 PI、SR、HE 等群体指标；它只要求模型对单�
 控制"模型实际输出幅度"后 alpha 对极化的效应从 p<1e-4 变为 p=0.60。
 
 任何新增字段前请自问：**真人用户能不能"感觉到"这个量？** 不能，就不要给。
+
+⚠️ 提示词版本（2026-11-25）
+--------------------------
+论文（期刊版 v18）的 LLM 结果使用 **signed-feed 提示词**：在标签版字段表之外
+增加 ``feed_mean_opinion``（推荐内容的平均立场，带符号，[-1,1]）。规则主体一直
+拿到的就是带符号的 ``o_feed = mean(p.opinion)``；早期 LLM 提示词只给无符号距离
+``mean(|o_i - p_j| / 2)``，信息集与规则主体不对称。
+
+本文件的批量路径默认输出 signed-feed 提示词（与论文一致），字段用全名；
+``config.LLM_SIGNED_FEED=False``（环境变量 ``LLM_FEED_SIGNED=0``）时退回
+unsigned-distance 标签版，用于复现旧数据（DeepSeek beta=-0.031, p=0.782）。
 """
 from typing import Dict, Any
 import json
+
+# ---------------------------------------------------------------------------
+# 标签版字段表（与论文 LLM 批次实际使用的提示词逐字一致）
+# ---------------------------------------------------------------------------
+_LABELED_RULES = (
+    "Return only a JSON array with one object per input id, in the same order. "
+    "Each object must contain only express (0/1), stance_delta [-0.05,0.05], "
+    "emotion_delta [-0.1,0.1]. Decide from the shown feed and your own state; "
+    "you may stay silent or keep your stance unchanged when you judge it "
+    "appropriate, and not everyone needs to express. "
+    "No comments or explanations.\n"
+    "Input fields (one object per agent, in the given order):\n"
+    "- id: this agent's identifier.\n"
+    "- opinion: this agent's own current stance on the issue, a continuous value "
+    "in [-1, 1], where -1 and +1 are the two extreme stances and 0 is neutral.\n"
+    "- emotion: this agent's own current emotional intensity, in [0, 1].\n"
+    "- activity: this agent's own current level of activity, in [0, 1]; "
+    "a higher value means the agent tends to be more active in the discussion.\n"
+    "- feed_stance_distance: the mean absolute distance between this agent's own stance "
+    "and the stances of the posts shown to it in its recommendation feed, in [0, 1]; "
+    "a larger value means the shown feed differs more from the agent's own stance.\n"
+    "- feed_emotion: the mean emotional intensity of the posts shown to it in its "
+    "recommendation feed, in [0, 1]."
+)
+
+# 论文口径：标签版 + 带符号的推荐内容平均立场
+_DIRECTION_RULES = _LABELED_RULES.replace(
+    "- feed_stance_distance:",
+    "- feed_mean_opinion: the mean stance of the posts shown to it in its recommendation "
+    "feed, a continuous value in [-1, 1], where -1 and +1 are the two extreme stances "
+    "and 0 is neutral.\n"
+    "- feed_stance_distance:",
+)
+assert "feed_mean_opinion" in _DIRECTION_RULES
 
 
 def build_prompt(state: Dict[str, Any], items: list) -> str:
@@ -37,8 +82,11 @@ def build_prompt(state: Dict[str, Any], items: list) -> str:
         f"Agent类型={state.get('agent_type')}",
         f"推荐内容平均立场距离={state.get('mean_stance_distance')}",
         f"推荐内容平均情绪={state.get('mean_feed_emotion')}",
-        "推荐内容（已经由程序按统一的 Top-K 规则排序）：",
     ]
+    # 论文口径：与规则主体信息集对齐，给出带符号的推荐内容平均立场
+    if state.get("mean_feed_opinion") is not None:
+        lines.insert(7, f"推荐内容平均立场（带符号）={state.get('mean_feed_opinion')}")
+    lines.append("推荐内容（已经由程序按统一的 Top-K 规则排序）：")
     for i, it in enumerate(items[: int(state.get("top_k") or 10)], 1):
         lines.append(
             f"{i}: 立场={it.get('opinion')}, 情绪={it.get('emotion')}, "
@@ -57,40 +105,33 @@ def build_prompt(state: Dict[str, Any], items: list) -> str:
 
 
 def build_batch_prompt(batch: list) -> str:
-    """Compact JSON-only prompt for a batch of Agent decisions.
+    """Batch JSON-only prompt for Agent decisions（与论文提示词一致）.
 
-    The recommendation function has already selected the Top-K feed.  To keep
-    requests small, each Agent is represented by bounded summary features of
-    that exact feed rather than repeating all post text.
+    Each Agent is represented by bounded summary features of its exact Top-K
+    feed.  When the model provides ``mean_feed_opinion``（signed feed stance）,
+    we emit the paper's signed-feed prompt（7 fields）; otherwise we fall back
+    to the legacy unsigned-distance labeled prompt（6 fields）.
     """
+    signed = any(item["state"].get("mean_feed_opinion") is not None for item in batch)
     compact = []
     for item in batch:
         state = item["state"]
-        compact.append(
-            {
-                "id": item["agent_id"],
-                "o": round(float(state["opinion"]), 4),
-                "e": round(float(state["emotion"]), 4),
-                "a": round(float(state["activity"]), 4),
-                "d": round(float(state.get("mean_stance_distance", 0.0)), 4),
-                "fe": round(float(state.get("mean_feed_emotion", 0.0)), 4),
-                **(
-                    {"fo": round(float(state.get("mean_feed_opinion", 0.0)), 4)}
-                    if state.get("mean_feed_opinion") is not None
-                    else {}
-                ),
-            }
+        row = {
+            "id": item["agent_id"],
+            "opinion": round(float(state["opinion"]), 4),
+            "emotion": round(float(state["emotion"]), 4),
+            "activity": round(float(state["activity"]), 4),
+        }
+        if signed:
+            row["feed_mean_opinion"] = round(
+                float(state.get("mean_feed_opinion", 0.0)), 4
+            )
+        row["feed_stance_distance"] = round(
+            float(state.get("mean_stance_distance", 0.0)), 4
         )
-    has_fo = any("fo" in c for c in compact)
-    rules = (
-        "Return only a JSON array with one object per input id, in the same order. "
-        + ("Key fo is the signed mean stance of the shown posts, in [-1,1] "
-           "(negative = opposite side, positive = your side, 0 = neutral). " if has_fo else "")
-        +
-        "Each object must contain only express (0/1), stance_delta [-0.05,0.05], "
-        "emotion_delta [-0.1,0.1]. Decide from the shown feed and your own state; "
-        "you may stay silent or keep your stance unchanged when you judge it "
-        "appropriate, and not everyone needs to express. "
-        "No comments or explanations."
+        row["feed_emotion"] = round(float(state.get("mean_feed_emotion", 0.0)), 4)
+        compact.append(row)
+    rules = _DIRECTION_RULES if signed else _LABELED_RULES
+    return rules + "\nINPUT=" + json.dumps(
+        compact, ensure_ascii=False, separators=(",", ":")
     )
-    return rules + "\nINPUT=" + json.dumps(compact, ensure_ascii=False, separators=(",", ":"))
